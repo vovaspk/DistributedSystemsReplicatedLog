@@ -16,6 +16,7 @@ services:
       context: .
       dockerfile: sec/Dockerfile
     environment:
+      SEC_NODE_ID: sec1
       SEC_DELAY_MS: 2000
     ports:
       - "8081:8080"
@@ -25,6 +26,7 @@ services:
       context: .
       dockerfile: sec/Dockerfile
     environment:
+      SEC_NODE_ID: sec2
       SEC_DELAY_MS: 5000
     ports:
       - "8082:8080"

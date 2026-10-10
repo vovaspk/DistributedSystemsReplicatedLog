@@ -49,21 +49,27 @@ class Iteration1ReplicationTest {
         assertEquals(List.of("m1"), cluster.secondary(2).listMsgs());
     }
 
+    /** The assignment's harness scenario, step by step. */
     @Test
-    void appendDoesNotBlockWithoutDelays() {
-        cluster.transport.setDelay(cluster.masterId, cluster.secondary(1).id(), sec(5));
-        cluster.transport.setDelay(cluster.masterId, cluster.secondary(2).id(), sec(6));
-        cluster.master.appendMsg("m1");
-        cluster.master.appendMsg("m2");
+    void assignmentScenario() {
+        var s1 = cluster.secondary(1);
+        var s2 = cluster.secondary(2);
 
-        cluster.transport.removeDelay(cluster.masterId, cluster.secondary(1).id());
-        cluster.transport.removeDelay(cluster.masterId, cluster.secondary(2).id());
+        cluster.transport.setDelay(cluster.masterId, s1.id(), sec(5));
+        assertBlocksAbout(sec(5), () -> cluster.master.appendMsg("m1"));
+        assertEquals(List.of("m1"), cluster.master.listMsgs());
 
+        cluster.transport.setDelay(cluster.masterId, s2.id(), sec(6));
+        assertBlocksAbout(sec(6), () -> cluster.master.appendMsg("m2"));
+        assertEquals(List.of("m1", "m2"), cluster.master.listMsgs());
+
+        cluster.transport.removeDelay(cluster.masterId, s1.id());
+        cluster.transport.removeDelay(cluster.masterId, s2.id());
         assertCompletesWithin(TOLERANCE, () -> cluster.master.appendMsg("m3"));
 
         List<String> all = List.of("m1", "m2", "m3");
         assertEquals(all, cluster.master.listMsgs());
-        assertEquals(all, cluster.secondary(1).listMsgs());
-        assertEquals(all, cluster.secondary(2).listMsgs());
+        assertEquals(all, s1.listMsgs());
+        assertEquals(all, s2.listMsgs());
     }
 }

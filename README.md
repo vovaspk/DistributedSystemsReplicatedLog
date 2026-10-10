@@ -28,6 +28,8 @@ docker-compose.yml   1 master + 2 secondaries
 ```bash
 docker compose up --build
 ```
+The first build takes about a minute (it downloads the JDK images and Gradle dependencies); later runs are cached. Wait until all three services log `Started ...Application`.
+
 Services and ports on your machine:
 
 | Service | URL | Artificial replication delay |
@@ -70,7 +72,7 @@ are scaled down by 10 (`TestTime.SCALE`).
 Iteration 1 scenarios (`core/src/test/.../Iteration1ReplicationTest`):
 1. delay on S1 → `append` blocks until S1 ACKs;
 2. delays 5 s and 6 s → `append` takes ≈ 6 s, not 11 s (replication is parallel);
-3. delays removed → `append` does not block and master, S1, S2 list `m1, m2, m3`.
+3. the full assignment scenario: `m1` blocks 5 s, `m2` blocks 6 s, delays removed → `m3` does not block, and master, S1, S2 list `m1, m2, m3`.
 
 Run with Docker only (nothing else installed; the build fails if a test fails):
 ```bash
@@ -85,6 +87,7 @@ Or, with a local JDK 25:
 | Property / env var | Service | Meaning |
 |---|---|---|
 | `replication.secondaries` / `REPLICATION_SECONDARIES` | master | Comma-separated secondary base URLs |
+| `sec.node-id` / `SEC_NODE_ID` | secondary | Name used in log lines (default `secondary`) |
 | `sec.delay-ms` / `SEC_DELAY_MS` | secondary | Sleep before storing a replicated message (default 0) |
 
 ## Notes
