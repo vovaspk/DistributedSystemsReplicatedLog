@@ -1,0 +1,6 @@
+# Runs the test suite inside Docker: `docker build -f Dockerfile.test --no-cache --progress=plain .`
+# The build fails if any test fails. Nothing but Docker is required.
+FROM eclipse-temurin:25-jdk
+WORKDIR /workspace
+COPY . .
+RUN ./gradlew test --no-daemon --console=plain
