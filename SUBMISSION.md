@@ -2,7 +2,7 @@
 
 - **Repository:** https://github.com/vovaspk/DistributedSystemsReplicatedLog
 - **Branch:** `iteration-2`
-- **Full documentation:** see [README.md](README.md)
+- **Full documentation:** [README.md](README.md) in the repository (design: write concern `w`, total order via `seq`)
 
 ## Requirements
 Only Docker (Docker Desktop, or Docker Engine + the Compose plugin). No local JDK or Gradle is needed.
@@ -13,8 +13,11 @@ git clone -b iteration-2 https://github.com/vovaspk/DistributedSystemsReplicated
 cd DistributedSystemsReplicatedLog
 docker build -f Dockerfile.test --no-cache --progress=plain .
 ```
-The build fails if any test fails. It includes the test-harness scenario from the assignment
-(`core/src/test/.../Iteration1ReplicationTest`).
+The build fails if any test fails. It includes:
+- Iteration 1 harness scenario (`core/src/test/.../Iteration1ReplicationTest`);
+- Iteration 2 tests (`core/src/test/.../Iteration2WriteConcernTest`): the acceptance scenario (`Msg1`..`Msg4`
+  with `w=1,2,3,1`), write concern `w=1/2/3`, replica lag and eventual consistency, `reorderMessages` in the
+  harness, in-order delivery on secondaries and identical order on all nodes under concurrent clients.
 
 ## Run the system
 ```bash
