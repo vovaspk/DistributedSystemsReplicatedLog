@@ -40,4 +40,8 @@ public class TestCluster {
     public CompletableFuture<Void> appendAsync(String payload) {
         return CompletableFuture.runAsync(() -> master.appendMsg(payload), runnable -> Thread.ofVirtual().start(runnable));
     }
+
+    public CompletableFuture<Void> appendAsync(String payload, int w) {
+        return CompletableFuture.runAsync(() -> master.appendMsg(payload, w), runnable -> Thread.ofVirtual().start(runnable));
+    }
 }

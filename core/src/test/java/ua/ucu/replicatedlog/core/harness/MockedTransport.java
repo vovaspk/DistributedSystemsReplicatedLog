@@ -42,6 +42,23 @@ public class MockedTransport implements Transport {
         rulesFor(new Link(from, to)).removeIf(rule -> rule instanceof DelayRule);
     }
 
+    /**
+     * Holds back messages on the link until {@code messagesCount} have arrived, then delivers them in
+     * reverse order (the network reorders them).
+     */
+    public void reorderMessages(NodeId from, NodeId to, int messagesCount) {
+        addRule(from, to, new ReorderRule(messagesCount));
+    }
+
+    /** Same, but releases a partly filled group after {@code flushAfter} instead of holding it forever. */
+    public void reorderMessages(NodeId from, NodeId to, int messagesCount, Duration flushAfter) {
+        addRule(from, to, new ReorderRule(messagesCount, flushAfter));
+    }
+
+    public void reorderMessages(NodeId from, NodeId to) {
+        reorderMessages(from, to, 2);
+    }
+
     public void addRule(NodeId from, NodeId to, LinkRule rule) {
         rulesFor(new Link(from, to)).add(rule);
     }

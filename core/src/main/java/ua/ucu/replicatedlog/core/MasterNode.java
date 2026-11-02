@@ -3,8 +3,6 @@ package ua.ucu.replicatedlog.core;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,15 +27,28 @@ public class MasterNode {
         log.info("Master {} configured with secondaries: {}", id, this.secondaries);
     }
 
-    /**
-     * Appends the message locally, replicates it to every secondary in parallel and blocks until all of
-     * them have ACKed (blocking replication, Iteration 1).
-     */
+    /** Appends with the strictest write concern: the master and every secondary (Iteration 1 behaviour). */
     public void appendMsg(String payload) {
-        log.info("Append received: '{}'", payload);
+        appendMsg(payload, secondaries.size() + 1);
+    }
+
+    /**
+     * Appends the message locally and replicates it to every secondary in parallel, but answers the caller
+     * as soon as {@code w - 1} secondaries have ACKed (write concern: {@code w = 1} is the master alone,
+     * {@code w = 2} the master and one secondary, ...). Replication to the remaining secondaries continues in
+     * the background.
+     */
+    public void appendMsg(String payload, int w) {
+        int maxW = secondaries.size() + 1;
+        if (w < 1 || w > maxW) {
+            throw new IllegalArgumentException("Write concern w must be between 1 and " + maxW + " but was " + w);
+        }
+        log.info("Append received: '{}' (w={})", payload, w);
         Message message = storeLocally(payload);
-        replicateToAll(message);
-        log.info("Append finished for '{}'", payload);
+        AckTracker tracker = new AckTracker(w - 1, secondaries.size());
+        replicateToAll(message, tracker);
+        tracker.await();
+        log.info("Append finished for '{}' (w={})", payload, w);
     }
 
     public List<String> listMsgs() {
@@ -56,26 +67,68 @@ public class MasterNode {
         }
     }
 
-    private void replicateToAll(Message message) {
-        log.info("Replicating '{}' to {} secondaries in parallel", message.payload(), secondaries.size());
-        long start = System.currentTimeMillis();
-
-        List<CompletableFuture<Void>> futures = secondaries.stream()
-                .map(secondary -> CompletableFuture.runAsync(() -> sendTo(secondary, message), executor))
-                .toList();
-
-        try {
-            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-        } catch (CompletionException e) {
-            throw e.getCause() instanceof RuntimeException cause ? cause : e;
+    private void replicateToAll(Message message, AckTracker tracker) {
+        log.info("Replicating '{}' (seq={}) to {} secondaries in parallel", message.payload(), message.seq(),
+                secondaries.size());
+        for (NodeId secondary : secondaries) {
+            executor.execute(() -> sendTo(secondary, message, tracker));
         }
-        log.info("All {} ACKs received for '{}' in {} ms", secondaries.size(), message.payload(),
-                System.currentTimeMillis() - start);
     }
 
-    private void sendTo(NodeId secondary, Message message) {
-        log.info("Sending '{}' to {}", message.payload(), secondary);
-        transport.send(id, secondary, message);
-        log.info("ACK received from {} for '{}'", secondary, message.payload());
+    private void sendTo(NodeId secondary, Message message, AckTracker tracker) {
+        long start = System.currentTimeMillis();
+        log.info("Sending '{}' (seq={}) to {}", message.payload(), message.seq(), secondary);
+        try {
+            transport.send(id, secondary, message);
+        } catch (RuntimeException e) {
+            log.error("Replication of '{}' to {} failed: {}", message.payload(), secondary, e.getMessage());
+            tracker.failure();
+            return;
+        }
+        log.info("ACK received from {} for '{}' in {} ms", secondary, message.payload(),
+                System.currentTimeMillis() - start);
+        tracker.ack();
+    }
+
+    /**
+     * Counts ACKs of one append. Iteration 2 assumes a perfect link, so a failure is only tracked to avoid
+     * waiting forever for an ACK that can no longer arrive (retries come in Iteration 3).
+     */
+    private static final class AckTracker {
+
+        private final int required;
+        private int acks;
+        private int failures;
+        private final int total;
+
+        AckTracker(int required, int total) {
+            this.required = required;
+            this.total = total;
+        }
+
+        synchronized void ack() {
+            acks++;
+            notifyAll();
+        }
+
+        synchronized void failure() {
+            failures++;
+            notifyAll();
+        }
+
+        synchronized void await() {
+            try {
+                while (acks < required) {
+                    if (total - failures < required) {
+                        throw new TransportException("Write concern cannot be satisfied: " + acks + " ACKs, "
+                                + failures + " failed replications, " + required + " required");
+                    }
+                    wait();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TransportException("Interrupted while waiting for ACKs", e);
+            }
+        }
     }
 }
